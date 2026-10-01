@@ -47,4 +47,16 @@ public class WorldCache2DDoubleOfferTest {
         assertEquals(-1.5, cache.get(-1, 0), 0);
         assertEquals(-1.0, cache.get(0, 0), 0);
     }
+
+    @Test
+    public void isResolvedReportsOnlyFilledSlotsWithoutCreatingChunks() {
+        WorldCache2DDouble cache = new WorldCache2DDouble((x, z) -> 1.0, CHUNKS);
+        assertFalse(cache.isResolved(40, 40));
+        assertEquals(0, cache.getSize());
+        cache.get(40, 40);
+        cache.offer(-3, 9, 2.0);
+        assertTrue(cache.isResolved(40, 40));
+        assertTrue(cache.isResolved(-3, 9));
+        assertFalse(cache.isResolved(41, 40));
+    }
 }

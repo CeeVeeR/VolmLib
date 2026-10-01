@@ -28,6 +28,12 @@ public class WorldCache2DDouble {
         return chunk.get(x, z, resolver);
     }
 
+    /** Whether (x, z) already holds a value; never creates a chunk entry or touches recency. */
+    public boolean isResolved(int x, int z) {
+        ChunkCache2DDouble chunk = chunks.getQuietly(CacheKey.mix(CacheKey.key(x >> 4, z >> 4)));
+        return chunk != null && chunk.isResolved(x, z);
+    }
+
     /** Offers a value computed elsewhere (a batch prefetch) for (x, z); kept only if that slot is still empty. */
     public boolean offer(int x, int z, double value) {
         return chunkFor(CacheKey.key(x >> 4, z >> 4)).offerIfEmpty(x, z, value);

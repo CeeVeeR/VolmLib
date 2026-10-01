@@ -29,6 +29,11 @@ public class ChunkCache2DDouble {
         return compute(key, x, z, resolver);
     }
 
+    public boolean isResolved(int x, int z) {
+        int key = ((z & 15) << 4) | (x & 15);
+        return ((byte) STATE_HANDLE.getAcquire(states, key)) == STATE_READY;
+    }
+
     /**
      * Stores a precomputed value for an empty slot only. A slot being computed or already ready keeps its own
      * value, so an offer can never replace what the resolver produced; returns whether the offer was stored.
