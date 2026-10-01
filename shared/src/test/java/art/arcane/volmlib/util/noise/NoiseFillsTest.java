@@ -36,6 +36,16 @@ public class NoiseFillsTest {
     }
 
     @Test
+    public void cngFillFastSigned3DEqualsPerPointSignedNoise() {
+        for (NoiseType type : FRACTURE_SOURCES) {
+            CNG noise = CNG.signatureFast(new RNG(13), type, NoiseType.SIMPLEX);
+            double[] out = new double[POINTS];
+            noise.fillFastSigned3D(xs, ys, zs, out);
+            assertEachPoint(type + " signed 3D", out, i -> noise.noiseFastSigned3D(xs[i], ys[i], zs[i]));
+        }
+    }
+
+    @Test
     public void generatorFill3DEqualsPerPointNoise() {
         NoiseGenerator generator = new SimplexNoise(99);
         double[] out = new double[POINTS];

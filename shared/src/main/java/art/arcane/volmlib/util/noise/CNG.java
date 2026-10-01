@@ -1150,6 +1150,13 @@ public class CNG {
         return applyPost(getNoise(x, y, z), x, y, z);
     }
 
+    public void fillFastSigned3D(double[] xs, double[] ys, double[] zs, double[] out) {
+        NoiseFills.requireMatchingLengths(out, xs, ys, zs);
+        for (int i = 0; i < out.length; i++) {
+            out[i] = noiseFastSigned3D(xs[i], ys[i], zs[i]);
+        }
+    }
+
     public double noiseFastSigned3D(double x, double y, double z) {
         long kx = Double.doubleToRawLongBits(x);
         long ky = Double.doubleToRawLongBits(y);
