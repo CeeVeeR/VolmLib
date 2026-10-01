@@ -19,14 +19,9 @@ pub fn fill_simplex_3d(seed: i64, inputs: [&[f64]; 3], out: &mut [f64]) {
 }
 
 pub fn fill_program_2d(program: &Program, xs: &[f64], zs: &[f64], out: &mut [f64]) {
-    for ((slot, &x), &z) in out.iter_mut().zip(xs).zip(zs) {
-        *slot = program.sample_2d(x, z);
-    }
+    program.fill_2d(xs, zs, out);
 }
 
 pub fn fill_program_3d(program: &Program, inputs: [&[f64]; 3], out: &mut [f64]) {
-    let points = inputs[0].iter().zip(inputs[1]).zip(inputs[2]);
-    for (slot, ((&x, &y), &z)) in out.iter_mut().zip(points) {
-        *slot = program.sample_3d(x, y, z);
-    }
+    program.fill_3d(inputs[0], inputs[1], inputs[2], out);
 }

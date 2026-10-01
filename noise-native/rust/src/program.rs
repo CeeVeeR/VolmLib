@@ -1,8 +1,7 @@
 //! Evaluator for `SignedNoiseProgram` (Java): a CNG's signed fast path as data. Mirrors
 //! `SignedNoiseProgram.sample2D/3D`, `OffsetSimplexSource` and `SimplexOctaves` operation for operation.
 
-use crate::simplex2d::simplex_2d;
-use crate::simplex3d::simplex_3d;
+use crate::batch::{fill_simplex_2d, fill_simplex_3d};
 
 pub const LONGS_PER_NODE: usize = 3;
 pub const DOUBLES_PER_NODE: usize = 7;
@@ -43,106 +42,154 @@ pub enum ProgramError {
 
 impl Program {
     pub fn decode(longs: &[i64], doubles: &[f64], node_count: usize) -> Result<Program, ProgramError> {
-        if node_count == 0 || node_count > MAXIMUM_NODES {
-            return Err(ProgramError::NodeCount);
-        }
-        let fits = longs.len() == node_count * LONGS_PER_NODE && doubles.len() == node_count * DOUBLES_PER_NODE;
-        if !fits {
-            return Err(ProgramError::SliceLength);
-        }
-        let nodes: Result<Vec<Node>, ProgramError> = (0..node_count).map(|index| decode_node(longs, doubles, index)).collect();
-        Ok(Program { nodes: nodes? })
+        check_layout(longs, doubles, node_count)?;
+        let nodes = (0..node_count).map(|index| decode_node(longs, doubles, index));
+        Ok(Program { nodes: nodes.collect::<Result<Vec<Node>, ProgramError>>()? })
     }
 
-    pub fn sample_2d(&self, x: f64, z: f64) -> f64 {
-        sample_node_2d(&self.nodes, 0, x, z)
+    pub fn fill_2d(&self, xs: &[f64], zs: &[f64], out: &mut [f64]) {
+        fill_node_2d(&self.nodes, 0, [xs, zs], out);
     }
 
-    pub fn sample_3d(&self, x: f64, y: f64, z: f64) -> f64 {
-        sample_node_3d(&self.nodes, 0, x, y, z)
+    pub fn fill_3d(&self, xs: &[f64], ys: &[f64], zs: &[f64], out: &mut [f64]) {
+        fill_node_3d(&self.nodes, 0, [xs, ys, zs], out);
     }
+}
+
+fn check_layout(longs: &[i64], doubles: &[f64], node_count: usize) -> Result<(), ProgramError> {
+    if node_count == 0 || node_count > MAXIMUM_NODES {
+        return Err(ProgramError::NodeCount);
+    }
+    let fits = longs.len() == node_count * LONGS_PER_NODE && doubles.len() == node_count * DOUBLES_PER_NODE;
+    if fits { Ok(()) } else { Err(ProgramError::SliceLength) }
 }
 
 fn decode_node(longs: &[i64], doubles: &[f64], index: usize) -> Result<Node, ProgramError> {
     let ints = &longs[index * LONGS_PER_NODE..][..LONGS_PER_NODE];
     let reals = &doubles[index * DOUBLES_PER_NODE..][..DOUBLES_PER_NODE];
-    if !(1..=MAXIMUM_OCTAVES).contains(&ints[2]) {
-        return Err(ProgramError::OctaveCount);
-    }
-    let octaves = Octaves { seed: ints[1], frequency: reals[0], count: ints[2], bounding: reals[1] };
+    let octaves = decode_octaves(ints, reals)?;
     let offset = (ints[0] != 0).then_some((reals[2], reals[3]));
     Ok(Node { octaves, offset, scale: reals[4], opacity: reals[5], fracture_strength: reals[6] })
 }
 
-fn sample_node_2d(nodes: &[Node], index: usize, x: f64, z: f64) -> f64 {
+fn decode_octaves(ints: &[i64], reals: &[f64]) -> Result<Octaves, ProgramError> {
+    if !(1..=MAXIMUM_OCTAVES).contains(&ints[2]) {
+        return Err(ProgramError::OctaveCount);
+    }
+    Ok(Octaves { seed: ints[1], frequency: reals[0], count: ints[2], bounding: reals[1] })
+}
+
+fn fill_node_2d(nodes: &[Node], index: usize, [xs, zs]: [&[f64]; 2], out: &mut [f64]) {
     let node = &nodes[index];
     if index + 1 == nodes.len() {
-        return with_opacity(node, source_2d(node, x * node.scale, z * node.scale));
+        return fill_source_2d(node, [&scaled(xs, node.scale), &scaled(zs, node.scale)], out);
     }
-    let fx = x + (sample_node_2d(nodes, index + 1, x, z) * node.fracture_strength);
-    let fz = z + (sample_node_2d(nodes, index + 1, z, x) * node.fracture_strength);
-    with_opacity(node, source_2d(node, fx * node.scale, fz * node.scale))
+    let warped_x = warped(nodes, index, xs, |field| fill_node_2d(nodes, index + 1, [xs, zs], field));
+    let warped_z = warped(nodes, index, zs, |field| fill_node_2d(nodes, index + 1, [zs, xs], field));
+    fill_source_2d(node, [&scaled(&warped_x, node.scale), &scaled(&warped_z, node.scale)], out);
 }
 
-fn sample_node_3d(nodes: &[Node], index: usize, x: f64, y: f64, z: f64) -> f64 {
+fn fill_node_3d(nodes: &[Node], index: usize, [xs, ys, zs]: [&[f64]; 3], out: &mut [f64]) {
     let node = &nodes[index];
     if index + 1 == nodes.len() {
-        return with_opacity(node, source_3d(node, x * node.scale, y * node.scale, z * node.scale));
+        let scaled_axes = [scaled(xs, node.scale), scaled(ys, node.scale), scaled(zs, node.scale)];
+        return fill_source_3d(node, [&scaled_axes[0], &scaled_axes[1], &scaled_axes[2]], out);
     }
-    let fx = x + (sample_node_3d(nodes, index + 1, x, y, z) * node.fracture_strength);
-    let fy = y + (sample_node_2d(nodes, index + 1, y, x) * node.fracture_strength);
-    let fz = z + (sample_node_3d(nodes, index + 1, z, x, y) * node.fracture_strength);
-    with_opacity(node, source_3d(node, fx * node.scale, fy * node.scale, fz * node.scale))
+    let warped_axes = warped_volume(nodes, index, [xs, ys, zs]);
+    let scaled_axes = warped_axes.map(|axis| scaled(&axis, node.scale));
+    fill_source_3d(node, [&scaled_axes[0], &scaled_axes[1], &scaled_axes[2]], out);
 }
 
-fn with_opacity(node: &Node, signed: f64) -> f64 {
-    if node.opacity == UNITY_OPACITY { signed } else { ((signed + 1.0) * node.opacity) - 1.0 }
+fn warped_volume(nodes: &[Node], index: usize, [xs, ys, zs]: [&[f64]; 3]) -> [Vec<f64>; 3] {
+    let child = index + 1;
+    let warped_x = warped(nodes, index, xs, |field| fill_node_3d(nodes, child, [xs, ys, zs], field));
+    let warped_y = warped(nodes, index, ys, |field| fill_node_2d(nodes, child, [ys, xs], field));
+    let warped_z = warped(nodes, index, zs, |field| fill_node_3d(nodes, child, [zs, xs, ys], field));
+    [warped_x, warped_y, warped_z]
 }
 
-fn source_2d(node: &Node, x: f64, z: f64) -> f64 {
+fn warped(nodes: &[Node], index: usize, axis: &[f64], fill_fracture: impl FnOnce(&mut [f64])) -> Vec<f64> {
+    let mut field = vec![0.0; axis.len()];
+    fill_fracture(&mut field);
+    let strength = nodes[index].fracture_strength;
+    axis.iter().zip(&field).map(|(&coordinate, &fracture)| coordinate + (fracture * strength)).collect()
+}
+
+fn scaled(axis: &[f64], factor: f64) -> Vec<f64> {
+    axis.iter().map(|&coordinate| coordinate * factor).collect()
+}
+
+fn shifted(axis: &[f64], offset: f64) -> Vec<f64> {
+    axis.iter().map(|&coordinate| coordinate + offset).collect()
+}
+
+fn fill_source_2d(node: &Node, [xs, zs]: [&[f64]; 2], out: &mut [f64]) {
     match node.offset {
-        Some((offset_x, offset_z)) => octaves_2d(&node.octaves, x + offset_x, z + offset_z),
-        None => octaves_2d(&node.octaves, x, z),
+        Some((offset_x, offset_z)) => fill_octaves_2d(&node.octaves, [&shifted(xs, offset_x), &shifted(zs, offset_z)], out),
+        None => fill_octaves_2d(&node.octaves, [xs, zs], out),
     }
+    apply_opacity(node.opacity, out);
 }
 
-fn source_3d(node: &Node, x: f64, y: f64, z: f64) -> f64 {
+fn fill_source_3d(node: &Node, [xs, ys, zs]: [&[f64]; 3], out: &mut [f64]) {
     match node.offset {
-        Some((offset_x, offset_z)) => octaves_3d(&node.octaves, x + offset_x, y, z + offset_z),
-        None => octaves_3d(&node.octaves, x, y, z),
+        Some((offset_x, offset_z)) => fill_octaves_3d(&node.octaves, [&shifted(xs, offset_x), ys, &shifted(zs, offset_z)], out),
+        None => fill_octaves_3d(&node.octaves, [xs, ys, zs], out),
+    }
+    apply_opacity(node.opacity, out);
+}
+
+fn apply_opacity(opacity: f64, values: &mut [f64]) {
+    if opacity != UNITY_OPACITY {
+        values.iter_mut().for_each(|value| *value = ((*value + 1.0) * opacity) - 1.0);
     }
 }
 
-fn octaves_2d(octaves: &Octaves, x: f64, z: f64) -> f64 {
-    let single = |x: f64, z: f64| simplex_2d(octaves.seed, x * octaves.frequency, z * octaves.frequency);
+fn fill_octaves_2d(octaves: &Octaves, [xs, zs]: [&[f64]; 2], out: &mut [f64]) {
+    let single = |factor: Option<f64>, field: &mut [f64]| {
+        let frequency = factor_then_frequency(factor, octaves.frequency);
+        fill_simplex_2d(octaves.seed, &frequency(xs), &frequency(zs), field);
+    };
+    sum_octaves(octaves, out, single);
+}
+
+fn fill_octaves_3d(octaves: &Octaves, [xs, ys, zs]: [&[f64]; 3], out: &mut [f64]) {
+    let single = |factor: Option<f64>, field: &mut [f64]| {
+        let frequency = factor_then_frequency(factor, octaves.frequency);
+        fill_simplex_3d(octaves.seed, [&frequency(xs), &frequency(ys), &frequency(zs)], field);
+    };
+    sum_octaves(octaves, out, single);
+}
+
+/// SimplexNoise scales by the octave factor, then FastNoiseDouble.GetSimplex by its frequency; a single
+/// octave skips the factor multiply entirely, exactly like the Java branch.
+fn factor_then_frequency(factor: Option<f64>, frequency: f64) -> impl Fn(&[f64]) -> Vec<f64> {
+    move |axis| match factor {
+        Some(factor) => axis.iter().map(|&coordinate| (coordinate * factor) * frequency).collect(),
+        None => axis.iter().map(|&coordinate| coordinate * frequency).collect(),
+    }
+}
+
+fn sum_octaves(octaves: &Octaves, out: &mut [f64], single: impl Fn(Option<f64>, &mut [f64])) {
     if octaves.count == 1 {
-        return single(x, z);
+        return single(None, out);
     }
-    octave_sum(octaves.count, |factor| single(x * factor, z * factor)) * octaves.bounding
-}
-
-fn octaves_3d(octaves: &Octaves, x: f64, y: f64, z: f64) -> f64 {
-    let frequency = octaves.frequency;
-    let single = |x: f64, y: f64, z: f64| simplex_3d(octaves.seed, x * frequency, y * frequency, z * frequency);
-    if octaves.count == 1 {
-        return single(x, y, z);
-    }
-    octave_sum(octaves.count, |factor| single(x * factor, y * factor, z * factor)) * octaves.bounding
-}
-
-fn octave_sum(count: i64, octave: impl Fn(f64) -> f64) -> f64 {
-    let (mut factor, mut amplitude, mut value) = (1.0, 1.0, 0.0);
-    for _ in 0..count {
-        value += octave(factor) * amplitude;
+    out.fill(0.0);
+    let (mut factor, mut amplitude) = (1.0, 1.0);
+    let mut field = vec![0.0; out.len()];
+    for _ in 0..octaves.count {
+        single(Some(factor), &mut field);
+        out.iter_mut().zip(&field).for_each(|(value, &sample)| *value += sample * amplitude);
         factor *= OCTAVE_FREQUENCY_STEP;
         amplitude *= OCTAVE_AMPLITUDE_STEP;
     }
-    value
+    out.iter_mut().for_each(|value| *value *= octaves.bounding);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::simplex3d::simplex_3d;
 
     fn single_node(octaves: i64) -> (Vec<i64>, Vec<f64>) {
         (vec![1, 42, octaves], vec![0.01, 1.0, 100.0, -50.0, 0.5, 1.0, 0.0])
@@ -174,15 +221,17 @@ mod tests {
         let (longs, doubles) = single_node(1);
         let program = Program::decode(&longs, &doubles, 1).expect("valid single node");
         let expected = simplex_3d(42, (1.0 * 0.5 + 100.0) * 0.01, (2.0 * 0.5) * 0.01, (3.0 * 0.5 - 50.0) * 0.01);
-        assert_eq!(program.sample_3d(1.0, 2.0, 3.0), expected);
+        let mut out = [0.0];
+        program.fill_3d(&[1.0], &[2.0], &[3.0], &mut out);
+        assert_eq!(out[0], expected);
     }
 
     #[test]
-    fn non_unity_opacity_rescales_around_minus_one() {
-        let mut node = Node { octaves: Octaves { seed: 1, frequency: 1.0, count: 1, bounding: 1.0 },
-            offset: None, scale: 1.0, opacity: 0.5, fracture_strength: 0.0 };
-        assert_eq!(with_opacity(&node, 1.0), 0.0);
-        node.opacity = UNITY_OPACITY;
-        assert_eq!(with_opacity(&node, 0.3), 0.3);
+    fn non_unity_opacity_rescales_around_minus_one_and_unity_leaves_values_alone() {
+        let mut values = [1.0, -1.0];
+        apply_opacity(0.5, &mut values);
+        assert_eq!(values, [0.0, -1.0]);
+        apply_opacity(UNITY_OPACITY, &mut values);
+        assert_eq!(values, [0.0, -1.0]);
     }
 }
