@@ -65,11 +65,13 @@ fn check_layout(longs: &[i64], doubles: &[f64], node_count: usize) -> Result<(),
 }
 
 fn decode_node(longs: &[i64], doubles: &[f64], index: usize) -> Result<Node, ProgramError> {
-    let ints = &longs[index * LONGS_PER_NODE..][..LONGS_PER_NODE];
-    let reals = &doubles[index * DOUBLES_PER_NODE..][..DOUBLES_PER_NODE];
-    let octaves = decode_octaves(ints, reals)?;
+    let (ints, reals) = node_slices(longs, doubles, index);
     let offset = (ints[0] != 0).then_some((reals[2], reals[3]));
-    Ok(Node { octaves, offset, scale: reals[4], opacity: reals[5], fracture_strength: reals[6] })
+    Ok(Node { octaves: decode_octaves(ints, reals)?, offset, scale: reals[4], opacity: reals[5], fracture_strength: reals[6] })
+}
+
+fn node_slices<'a>(longs: &'a [i64], doubles: &'a [f64], index: usize) -> (&'a [i64], &'a [f64]) {
+    (&longs[index * LONGS_PER_NODE..][..LONGS_PER_NODE], &doubles[index * DOUBLES_PER_NODE..][..DOUBLES_PER_NODE])
 }
 
 fn decode_octaves(ints: &[i64], reals: &[f64]) -> Result<Octaves, ProgramError> {

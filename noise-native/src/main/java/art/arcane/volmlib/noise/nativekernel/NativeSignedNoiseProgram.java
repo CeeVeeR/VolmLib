@@ -3,6 +3,7 @@ package art.arcane.volmlib.noise.nativekernel;
 import art.arcane.volmlib.util.noise.NoiseFills;
 import art.arcane.volmlib.util.noise.NoiseSource;
 import art.arcane.volmlib.util.noise.OffsetSimplexSource;
+import art.arcane.volmlib.util.noise.PreparedNoiseProgram;
 import art.arcane.volmlib.util.noise.SignedNoiseProgram;
 import art.arcane.volmlib.util.noise.SimplexOctaves;
 
@@ -11,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** A SignedNoiseProgram encoded once for the Rust evaluator (layout mirrors rust/src/program.rs). */
-public final class NativeSignedNoiseProgram {
+public final class NativeSignedNoiseProgram implements PreparedNoiseProgram {
     private static final int LONGS_PER_NODE = 3;
     private static final int DOUBLES_PER_NODE = 7;
     private static final long PLAIN_SOURCE = 0;
@@ -31,11 +32,13 @@ public final class NativeSignedNoiseProgram {
         }
     }
 
+    @Override
     public void fill2D(double[] xs, double[] zs, double[] out) {
         NoiseFills.requireMatchingLengths(out, xs, zs);
         NativeFillStatus.requireOk(callFill2D(xs, zs, out));
     }
 
+    @Override
     public void fill3D(double[] xs, double[] ys, double[] zs, double[] out) {
         NoiseFills.requireMatchingLengths(out, xs, ys, zs);
         NativeFillStatus.requireOk(callFill3D(xs, ys, zs, out));

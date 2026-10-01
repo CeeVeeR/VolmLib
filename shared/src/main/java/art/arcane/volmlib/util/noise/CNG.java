@@ -56,6 +56,7 @@ public class CNG {
     public static final NoiseInjector DST_POW = (s, v) -> new double[]{Math.pow(v, s), 0};
     private final double opacity;
     private static final int MAXIMUM_PROGRAM_DEPTH = 16;
+    private transient volatile PreparedSignedProgram preparedProgram;
     private double scale;
     private double bakedScale;
     private double fscale;
@@ -1154,9 +1155,49 @@ public class CNG {
 
     public void fillFastSigned3D(double[] xs, double[] ys, double[] zs, double[] out) {
         NoiseFills.requireMatchingLengths(out, xs, ys, zs);
+        PreparedNoiseProgram prepared = preparedSignedProgram();
+        if (prepared != null) {
+            prepared.fill3D(xs, ys, zs, out);
+            return;
+        }
         for (int i = 0; i < out.length; i++) {
             out[i] = noiseFastSigned3D(xs[i], ys[i], zs[i]);
         }
+    }
+
+    public void fillFastSigned2D(double[] xs, double[] zs, double[] out) {
+        NoiseFills.requireMatchingLengths(out, xs, zs);
+        PreparedNoiseProgram prepared = preparedSignedProgram();
+        if (prepared != null) {
+            prepared.fill2D(xs, zs, out);
+            return;
+        }
+        for (int i = 0; i < out.length; i++) {
+            out[i] = noiseFastSigned2D(xs[i], zs[i]);
+        }
+    }
+
+    /**
+     * Null when no evaluator is configured or this CNG is not covered. The program is recompiled on every
+     * fill and the prepared form reused only while it is equal, so a fracture CNG changed later can never
+     * leave a stale program behind.
+     */
+    private PreparedNoiseProgram preparedSignedProgram() {
+        NoiseProgramEvaluator evaluator = NoiseProgramEvaluators.active();
+        SignedNoiseProgram program = evaluator == null ? null : compileSignedProgram();
+        return program == null ? null : preparedFor(program, evaluator);
+    }
+
+    private PreparedNoiseProgram preparedFor(SignedNoiseProgram program, NoiseProgramEvaluator evaluator) {
+        PreparedSignedProgram cached = preparedProgram;
+        if (cached == null || !cached.program().equals(program)) {
+            cached = new PreparedSignedProgram(program, evaluator.prepare(program));
+            preparedProgram = cached;
+        }
+        return cached.prepared();
+    }
+
+    private record PreparedSignedProgram(SignedNoiseProgram program, PreparedNoiseProgram prepared) {
     }
 
     public double noiseFastSigned3D(double x, double y, double z) {
@@ -1324,6 +1365,7 @@ public class CNG {
 
     private void markFastPathStateDirty() {
         fastPathStateDirty = true;
+        preparedProgram = null;
         cache = null;
         coordCacheIdentity = new Object();
     }

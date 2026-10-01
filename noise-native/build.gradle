@@ -51,6 +51,7 @@ Map<String, String> nativeKernelProperties = [
 tasks.named('test', Test).configure {
     dependsOn('cargoBuildRelease', 'cargoTest')
     systemProperties(nativeKernelProperties)
+    systemProperty('volmlib.noise.programEvaluator', 'art.arcane.volmlib.noise.nativekernel.NativeNoiseProgramEvaluator')
     jvmArgs('--enable-native-access=ALL-UNNAMED')
 }
 
