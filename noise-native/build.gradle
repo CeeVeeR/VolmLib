@@ -1,0 +1,74 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+base {
+    archivesName = 'volmlib-noise-native'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.add('-parameters')
+    options.encoding = 'UTF-8'
+    options.release.set(25)
+}
+
+dependencies {
+    compileOnly(project(':shared'))
+    testImplementation(project(':shared'))
+    testImplementation('junit:junit:4.13.2')
+}
+
+File rustCrateDirectory = file('rust')
+File nativeLibrary = new File(rustCrateDirectory, 'target/release/libvolmlib_noise.so')
+
+tasks.register('cargoBuildRelease', Exec) {
+    group = 'build'
+    description = 'Builds the Rust simplex kernel as a release shared library.'
+    workingDir = rustCrateDirectory
+    commandLine 'cargo', 'build', '--release'
+    inputs.dir(new File(rustCrateDirectory, 'src'))
+    inputs.file(new File(rustCrateDirectory, 'Cargo.toml'))
+    outputs.file(nativeLibrary)
+}
+
+tasks.register('cargoTest', Exec) {
+    group = 'verification'
+    description = 'Runs the Rust kernel unit tests.'
+    workingDir = rustCrateDirectory
+    commandLine 'cargo', 'test', '--release'
+}
+
+Map<String, String> nativeKernelProperties = [
+    'volmlib.noise.library': nativeLibrary.absolutePath,
+]
+
+tasks.named('test', Test).configure {
+    dependsOn('cargoBuildRelease', 'cargoTest')
+    systemProperties(nativeKernelProperties)
+    jvmArgs('--enable-native-access=ALL-UNNAMED')
+}
+
+tasks.register('noiseBenchmark', JavaExec) {
+    group = 'verification'
+    description = 'Times the Java and Rust simplex kernels, per point and batched.'
+    dependsOn('cargoBuildRelease', 'testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'art.arcane.volmlib.noise.nativekernel.SimplexKernelBenchmark'
+    systemProperties(nativeKernelProperties)
+    jvmArgs('--enable-native-access=ALL-UNNAMED', '-Xms1g', '-Xmx1g')
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            artifactId = 'volmlib-noise-native'
+        }
+    }
+}

@@ -1,0 +1,3 @@
+# Experiment build for the owner's own server CPU: lets LLVM use AVX-512 when vectorizing fills.
+[build]
+rustflags = ["-C", "target-cpu=native"]

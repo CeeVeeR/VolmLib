@@ -1,0 +1,17 @@
+[package]
+name = "volmlib-noise"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Bit-exact Rust port of VolmLib FastNoiseDouble simplex noise, called from Java through FFM"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
