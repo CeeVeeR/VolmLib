@@ -30,6 +30,10 @@ public class SimplexNoise implements NoiseGenerator, OctaveNoise {
         octaves = 1;
     }
 
+    SimplexOctaves octaveSource() {
+        return new SimplexOctaves(n.getSeed(), n.getFrequency(), octaves, octaveBounding);
+    }
+
     public double f(double v) {
         return (v / 2D) + 0.5D;
     }

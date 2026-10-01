@@ -24,6 +24,7 @@ import art.arcane.volmlib.util.collection.KList;
 import art.arcane.volmlib.util.function.NoiseInjector;
 import art.arcane.volmlib.util.interpolation.IrisInterpolation;
 import art.arcane.volmlib.util.math.RNG;
+import art.arcane.volmlib.util.noise.SignedNoiseProgram.FractureWarp;
 import art.arcane.volmlib.util.stream.ProceduralStream;
 import art.arcane.volmlib.util.stream.arithmetic.FittedStream;
 import art.arcane.volmlib.util.stream.sources.CNGStream;
@@ -54,6 +55,7 @@ public class CNG {
     public static final NoiseInjector DST_MOD = (s, v) -> new double[]{v % s, 0};
     public static final NoiseInjector DST_POW = (s, v) -> new double[]{Math.pow(v, s), 0};
     private final double opacity;
+    private static final int MAXIMUM_PROGRAM_DEPTH = 16;
     private double scale;
     private double bakedScale;
     private double fscale;
@@ -1205,6 +1207,46 @@ public class CNG {
         double computed = computeNoiseFastSigned3D(x, y, z, caches);
         memo.store(identity, salt, kx, ky, kz, computed);
         return computed;
+    }
+
+    /** The signed fast path as data, or null when this CNG needs behaviour the program does not cover. */
+    public SignedNoiseProgram compileSignedProgram() {
+        return compileSignedProgram(MAXIMUM_PROGRAM_DEPTH);
+    }
+
+    private SignedNoiseProgram compileSignedProgram(int remainingDepth) {
+        if (!compilableAt(remainingDepth)) {
+            return null;
+        }
+        FractureWarp warp = usesFracture() ? compileFractureWarp(remainingDepth - 1) : null;
+        return usesFracture() && warp == null ? null : new SignedNoiseProgram(programSource(), effectiveScale, opacity, warp);
+    }
+
+    private boolean usesFracture() {
+        return fracture != null && !noscale;
+    }
+
+    private boolean compilableAt(int remainingDepth) {
+        return remainingDepth > 0 && coveredBySignedProgram() && programSource() != null;
+    }
+
+    private FractureWarp compileFractureWarp(int remainingDepth) {
+        SignedNoiseProgram source = fracture.compileSignedProgram(remainingDepth);
+        return source == null ? null : new FractureWarp(source, signedFractureScale);
+    }
+
+    private NoiseSource programSource() {
+        if (generator == null) {
+            return null;
+        }
+        if (generator.getClass() == SimplexNoise.class) {
+            return ((SimplexNoise) generator).octaveSource();
+        }
+        return generator.getClass() == OffsetNoiseGenerator.class ? ((OffsetNoiseGenerator) generator).programSource() : null;
+    }
+
+    private boolean coveredBySignedProgram() {
+        return getClass() == CNG.class && cache == null && hasIdentitySignedFastPath();
     }
 
     private double computeNoiseFastSigned3D(double x, double y, double z, SignedCaches caches) {

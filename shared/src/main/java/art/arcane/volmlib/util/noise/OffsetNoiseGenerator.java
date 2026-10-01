@@ -36,6 +36,11 @@ public class OffsetNoiseGenerator implements NoiseGenerator, OctaveNoise {
         oz = rng.nextInt(Short.MIN_VALUE, Short.MAX_VALUE);
     }
 
+    NoiseSource programSource() {
+        boolean plainSimplex = base.getClass() == SimplexNoise.class;
+        return plainSimplex ? new OffsetSimplexSource(simplexBase.octaveSource(), ox, oz) : null;
+    }
+
     @Override
     public double noise(double x) {
         return switch (dispatchKind) {
