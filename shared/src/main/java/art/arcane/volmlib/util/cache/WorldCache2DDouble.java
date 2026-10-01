@@ -28,6 +28,11 @@ public class WorldCache2DDouble {
         return chunk.get(x, z, resolver);
     }
 
+    /** Offers a value computed elsewhere (a batch prefetch) for (x, z); kept only if that slot is still empty. */
+    public boolean offer(int x, int z, double value) {
+        return chunkFor(CacheKey.key(x >> 4, z >> 4)).offerIfEmpty(x, z, value);
+    }
+
     public void fillChunk(int chunkX, int chunkZ, Object[] target) {
         if (target == null || target.length != 256) {
             throw new IllegalArgumentException("Expected a 16x16 target array.");

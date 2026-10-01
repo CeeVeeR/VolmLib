@@ -29,6 +29,20 @@ public class ChunkCache2DDouble {
         return compute(key, x, z, resolver);
     }
 
+    /**
+     * Stores a precomputed value for an empty slot only. A slot being computed or already ready keeps its own
+     * value, so an offer can never replace what the resolver produced; returns whether the offer was stored.
+     */
+    public boolean offerIfEmpty(int x, int z, double value) {
+        int key = ((z & 15) << 4) | (x & 15);
+        if (!STATE_HANDLE.compareAndSet(states, key, STATE_EMPTY, STATE_COMPUTING)) {
+            return false;
+        }
+        VALUE_HANDLE.setRelease(values, key, value);
+        STATE_HANDLE.setRelease(states, key, STATE_READY);
+        return true;
+    }
+
     public void fill(int worldX, int worldZ, Object[] target, IntIntToDoubleFunction resolver) {
         for (int row = 0; row < 16; row++) {
             int rowOffset = row << 4;
