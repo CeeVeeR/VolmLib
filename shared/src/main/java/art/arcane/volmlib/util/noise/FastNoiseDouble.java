@@ -53,6 +53,7 @@ public class FastNoiseDouble {
     private final static double G4 = (5.0 - 2.23606797) / 20.0;
     private final static double CUBIC_3D_BOUNDING = 1 / (1.5 * 1.5 * 1.5);
     private final static double CUBIC_2D_BOUNDING = 1 / (1.5 * 1.5);
+    private static final SimplexKernel SIMPLEX_KERNEL = SimplexKernels.active();
     public Longerp m_longerp = Longerp.Linear;
     private long m_seed = 1337;
     private double m_frequency = 0.01;
@@ -967,6 +968,10 @@ public class FastNoiseDouble {
     }
 
     private double SingleSimplex(long seed, double x, double y, double z) {
+        return SIMPLEX_KERNEL.simplex3D(seed, x, y, z);
+    }
+
+    static double simplex3DInJava(long seed, double x, double y, double z) {
         double t = (x + y + z) * F3;
         long i = fastFloor(x + t);
         long j = fastFloor(y + t);
@@ -1142,6 +1147,10 @@ public class FastNoiseDouble {
     }
 
     private double SingleSimplex(long seed, double x, double y) {
+        return SIMPLEX_KERNEL.simplex2D(seed, x, y);
+    }
+
+    static double simplex2DInJava(long seed, double x, double y) {
         double t = (x + y) * F2;
         long i = fastFloor(x + t);
         long j = fastFloor(y + t);
