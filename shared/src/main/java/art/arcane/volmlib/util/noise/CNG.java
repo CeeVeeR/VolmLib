@@ -868,6 +868,20 @@ public class CNG {
         return applyPost(getNoise(x, z), x, z);
     }
 
+    public void fill2D(double[] xs, double[] zs, double[] out) {
+        NoiseFills.requireMatchingLengths(out, xs, zs);
+        for (int i = 0; i < out.length; i++) {
+            out[i] = noise(xs[i], zs[i]);
+        }
+    }
+
+    public void fillFast2D(double[] xs, double[] zs, double[] out) {
+        NoiseFills.requireMatchingLengths(out, xs, zs);
+        for (int i = 0; i < out.length; i++) {
+            out[i] = noiseFast2D(xs[i], zs[i]);
+        }
+    }
+
     public double noiseFast2D(double x, double z) {
         if (fracture == null || fracture.fracture == null || !canMemoizeUnsignedFracture()) {
             return sampleUnsigned2D(x, z, null);

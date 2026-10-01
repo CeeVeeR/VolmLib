@@ -1,5 +1,6 @@
 package art.arcane.volmlib.noise.nativekernel;
 
+import art.arcane.volmlib.util.noise.NoiseFills;
 import art.arcane.volmlib.util.noise.SimplexKernel;
 
 import java.lang.foreign.MemorySegment;
@@ -24,12 +25,12 @@ public final class NativeSimplexKernel implements SimplexKernel {
     }
 
     public void fillSimplex2D(long seed, double[] xs, double[] ys, double[] out) {
-        requireMatchingLengths(out, xs, ys);
+        NoiseFills.requireMatchingLengths(out, xs, ys);
         NativeFillStatus.requireOk(callFill2D(seed, xs, ys, out));
     }
 
     public void fillSimplex3D(long seed, double[] xs, double[] ys, double[] zs, double[] out) {
-        requireMatchingLengths(out, xs, ys, zs);
+        NoiseFills.requireMatchingLengths(out, xs, ys, zs);
         NativeFillStatus.requireOk(callFill3D(seed, xs, ys, zs, out));
     }
 
@@ -51,14 +52,6 @@ public final class NativeSimplexKernel implements SimplexKernel {
 
     private static MemorySegment heap(double[] array) {
         return MemorySegment.ofArray(array);
-    }
-
-    private static void requireMatchingLengths(double[] out, double[]... inputs) {
-        for (double[] input : inputs) {
-            if (input.length != out.length) {
-                throw new IllegalArgumentException("Input length " + input.length + " differs from output " + out.length);
-            }
-        }
     }
 
     private static RuntimeException nativeCallFailed(Throwable failure) {

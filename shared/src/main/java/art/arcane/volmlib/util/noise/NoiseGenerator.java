@@ -39,6 +39,20 @@ public interface NoiseGenerator {
         return (noise(x, y, z) * 2D) - 1D;
     }
 
+    default void fill2D(double[] xs, double[] zs, double[] out) {
+        NoiseFills.requireMatchingLengths(out, xs, zs);
+        for (int i = 0; i < out.length; i++) {
+            out[i] = noise(xs[i], zs[i]);
+        }
+    }
+
+    default void fill3D(double[] xs, double[] ys, double[] zs, double[] out) {
+        NoiseFills.requireMatchingLengths(out, xs, ys, zs);
+        for (int i = 0; i < out.length; i++) {
+            out[i] = noise(xs[i], ys[i], zs[i]);
+        }
+    }
+
     default boolean isStatic() {
         return false;
     }
