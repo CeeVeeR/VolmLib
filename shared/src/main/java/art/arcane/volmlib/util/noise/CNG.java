@@ -25,6 +25,9 @@ import art.arcane.volmlib.util.function.NoiseInjector;
 import art.arcane.volmlib.util.interpolation.IrisInterpolation;
 import art.arcane.volmlib.util.math.RNG;
 import art.arcane.volmlib.util.noise.SignedNoiseProgram.FractureWarp;
+import art.arcane.volmlib.util.noise.UnsignedNoiseProgram.PostAdjustment;
+import art.arcane.volmlib.util.noise.UnsignedNoiseProgram.UnsignedFracture;
+import art.arcane.volmlib.util.noise.UnsignedNoiseProgram.UnsignedShaping;
 import art.arcane.volmlib.util.stream.ProceduralStream;
 import art.arcane.volmlib.util.stream.arithmetic.FittedStream;
 import art.arcane.volmlib.util.stream.sources.CNGStream;
@@ -1265,6 +1268,34 @@ public class CNG {
 
     private boolean usesFracture() {
         return fracture != null && !noscale;
+    }
+
+    /** The unsigned 2D path (noiseFast2D) as data, or null when this CNG needs behaviour the program does not cover. */
+    public UnsignedNoiseProgram compileUnsignedProgram() {
+        return compileUnsignedProgram(MAXIMUM_PROGRAM_DEPTH);
+    }
+
+    private UnsignedNoiseProgram compileUnsignedProgram(int remainingDepth) {
+        if (!unsignedCompilableAt(remainingDepth)) {
+            return null;
+        }
+        UnsignedFracture warp = usesFracture() ? compileUnsignedFracture(remainingDepth - 1) : null;
+        return usesFracture() && warp == null ? null : new UnsignedNoiseProgram(programSource(), unsignedShaping(), warp);
+    }
+
+    private boolean unsignedCompilableAt(int remainingDepth) {
+        boolean plainPost = power == 1D && children == null;
+        return remainingDepth > 0 && getClass() == CNG.class && cache == null && plainPost && programSource() != null;
+    }
+
+    private UnsignedShaping unsignedShaping() {
+        PostAdjustment post = isIdentityPostFastPath() ? null : new PostAdjustment(down, up, patch);
+        return new UnsignedShaping(effectiveScale, opacity, post);
+    }
+
+    private UnsignedFracture compileUnsignedFracture(int remainingDepth) {
+        UnsignedNoiseProgram source = fracture.compileUnsignedProgram(remainingDepth);
+        return source == null ? null : new UnsignedFracture(source, fscale);
     }
 
     private boolean compilableAt(int remainingDepth) {
