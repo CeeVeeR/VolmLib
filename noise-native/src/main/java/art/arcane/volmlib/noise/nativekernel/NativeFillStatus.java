@@ -7,7 +7,8 @@ enum NativeFillStatus {
     OK(0),
     NULL_POINTER(1),
     TOO_LONG(2),
-    OUTPUT_ALIASES_INPUT(3);
+    OUTPUT_ALIASES_INPUT(3),
+    INVALID_PROGRAM(4);
 
     private final int code;
 

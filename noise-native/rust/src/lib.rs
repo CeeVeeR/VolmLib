@@ -7,5 +7,6 @@ pub mod batch;
 mod ffi;
 pub mod gradient;
 pub mod hash;
+pub mod program;
 pub mod simplex2d;
 pub mod simplex3d;

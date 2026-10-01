@@ -1,5 +1,7 @@
 package art.arcane.volmlib.noise.nativekernel;
 
+import art.arcane.volmlib.util.math.RNG;
+import art.arcane.volmlib.util.noise.CNG;
 import art.arcane.volmlib.util.noise.JavaSimplexKernel;
 import art.arcane.volmlib.util.noise.SimplexKernel;
 
@@ -28,10 +30,10 @@ public final class SimplexKernelBenchmark {
     }
 
     private void runAll() {
-        SimplexKernel java = new JavaSimplexKernel();
-        NativeSimplexKernel rust = new NativeSimplexKernel();
-        runFlatCases(java, rust);
-        runVolumeCases(java, rust);
+        runFlatCases(new JavaSimplexKernel(), new NativeSimplexKernel());
+        runVolumeCases(new JavaSimplexKernel(), new NativeSimplexKernel());
+        runProgramCases("plain", new CNG(new RNG(1), 1D, 1).scale(0.05));
+        runProgramCases("fractured", fracturedCng());
         System.out.println("sink " + sink);
     }
 
@@ -45,6 +47,23 @@ public final class SimplexKernelBenchmark {
         report("3D java per point", () -> samplePoints3D(java));
         report("3D rust per point", () -> samplePoints3D(rust));
         report("3D rust batch fill", () -> rust.fillSimplex3D(SEED, xs, ys, zs, out));
+    }
+
+    private void runProgramCases(String shape, CNG cng) {
+        NativeSignedNoiseProgram program = new NativeSignedNoiseProgram(cng.compileSignedProgram());
+        report("3D cng " + shape, () -> sampleCng3D(cng));
+        report("3D program " + shape, () -> program.fill3D(xs, ys, zs, out));
+    }
+
+    private void sampleCng3D(CNG cng) {
+        for (int i = 0; i < POINTS; i++) {
+            out[i] = cng.noiseFastSigned3D(xs[i], ys[i], zs[i]);
+        }
+    }
+
+    private static CNG fracturedCng() {
+        CNG inner = new CNG(new RNG(8), 1D, 1).scale(0.21).fractureWith(new CNG(new RNG(9), 1D, 1).scale(0.9), 620);
+        return new CNG(new RNG(7), 1D, 1).scale(0.05).fractureWith(inner, 145);
     }
 
     private void samplePoints2D(SimplexKernel kernel) {
@@ -66,7 +85,7 @@ public final class SimplexKernelBenchmark {
         double[] nanosPerPoint = new double[MEASURED_ROUNDS];
         Arrays.setAll(nanosPerPoint, i -> timeRound(round));
         Arrays.sort(nanosPerPoint);
-        System.out.printf("%-22s %7.2f ns/point%n", label, nanosPerPoint[MEASURED_ROUNDS / 2]);
+        System.out.printf("%-26s %7.2f ns/point%n", label, nanosPerPoint[MEASURED_ROUNDS / 2]);
     }
 
     private double timeRound(Runnable round) {

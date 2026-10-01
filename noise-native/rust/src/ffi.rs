@@ -1,7 +1,8 @@
 //! C ABI for Java's foreign function API. The only `unsafe` in the crate lives here: borrowing
 //! the arrays Java hands over as slices, after every precondition was checked.
 
-use crate::batch::{fill_simplex_2d, fill_simplex_3d};
+use crate::batch::{fill_program_2d, fill_program_3d, fill_simplex_2d, fill_simplex_3d};
+use crate::program::{DOUBLES_PER_NODE, LONGS_PER_NODE, MAXIMUM_NODES, Program};
 use crate::simplex2d::simplex_2d;
 use crate::simplex3d::simplex_3d;
 
@@ -9,6 +10,7 @@ pub const STATUS_OK: i32 = 0;
 pub const STATUS_NULL_POINTER: i32 = 1;
 pub const STATUS_TOO_LONG: i32 = 2;
 pub const STATUS_OUTPUT_ALIASES_INPUT: i32 = 3;
+pub const STATUS_INVALID_PROGRAM: i32 = 4;
 
 const DOUBLE_BYTES: usize = size_of::<f64>();
 
@@ -44,6 +46,46 @@ pub extern "C" fn volmlib_noise_simplex_3d_fill(seed: i64, xs: *const f64, ys: *
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn volmlib_noise_program_fill_2d(longs: *const i64, doubles: *const f64, nodes: usize, xs: *const f64, zs: *const f64, out: *mut f64, len: usize) -> i32 {
+    let program = match decoded_program(longs, doubles, nodes) {
+        Ok(program) => program,
+        Err(status) => return status,
+    };
+    checked_buffers(&[xs, zs], out, len).map_or_else(|status| status, |(ins, output)| {
+        fill_program_2d(&program, ins[0], ins[1], output);
+        STATUS_OK
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn volmlib_noise_program_fill_3d(longs: *const i64, doubles: *const f64, nodes: usize, xs: *const f64, ys: *const f64, zs: *const f64, out: *mut f64, len: usize) -> i32 {
+    let program = match decoded_program(longs, doubles, nodes) {
+        Ok(program) => program,
+        Err(status) => return status,
+    };
+    checked_buffers(&[xs, ys, zs], out, len).map_or_else(|status| status, |(ins, output)| {
+        fill_program_3d(&program, [ins[0], ins[1], ins[2]], output);
+        STATUS_OK
+    })
+}
+
+fn decoded_program(longs: *const i64, doubles: *const f64, nodes: usize) -> Result<Program, i32> {
+    reject_unusable_program(longs, doubles, nodes)?;
+    // SAFETY: checked non-null and nodes <= MAXIMUM_NODES; Java passes nodes * stride live values.
+    let long_slice = unsafe { borrow_input(longs, nodes * LONGS_PER_NODE) };
+    // SAFETY: as above, for the double stride; both slices are copied into owned nodes here.
+    let double_slice = unsafe { borrow_input(doubles, nodes * DOUBLES_PER_NODE) };
+    Program::decode(long_slice, double_slice, nodes).map_err(|_| STATUS_INVALID_PROGRAM)
+}
+
+fn reject_unusable_program(longs: *const i64, doubles: *const f64, nodes: usize) -> Result<(), i32> {
+    if longs.is_null() || doubles.is_null() {
+        return Err(STATUS_NULL_POINTER);
+    }
+    if nodes == 0 || nodes > MAXIMUM_NODES { Err(STATUS_INVALID_PROGRAM) } else { Ok(()) }
+}
+
 type Buffers<'a> = (Vec<&'a [f64]>, &'a mut [f64]);
 
 fn checked_buffers<'a>(inputs: &[*const f64], out: *mut f64, len: usize) -> Result<Buffers<'a>, i32> {
@@ -56,7 +98,7 @@ fn checked_buffers<'a>(inputs: &[*const f64], out: *mut f64, len: usize) -> Resu
 /// # Safety
 /// `pointer` is non-null, aligned, and points at `len` doubles that stay alive and unmodified
 /// for the borrow; `len * 8` fits in `isize`.
-unsafe fn borrow_input<'a>(pointer: *const f64, len: usize) -> &'a [f64] {
+unsafe fn borrow_input<'a, T>(pointer: *const T, len: usize) -> &'a [T] {
     unsafe { std::slice::from_raw_parts(pointer, len) }
 }
 
@@ -116,6 +158,31 @@ mod tests {
         let input = [0.0; 1];
         let status = volmlib_noise_simplex_2d_fill(1, input.as_ptr(), input.as_ptr(), out.as_mut_ptr(), usize::MAX);
         assert_eq!(status, STATUS_TOO_LONG);
+    }
+
+    #[test]
+    fn invalid_program_node_counts_are_refused_before_reading_buffers() {
+        let (longs, doubles) = ([1_i64, 7, 1], [0.01, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0]);
+        let (input, mut out) = ([0.5], [0.0]);
+        for nodes in [0, MAXIMUM_NODES + 1] {
+            let status = volmlib_noise_program_fill_2d(longs.as_ptr(), doubles.as_ptr(), nodes, input.as_ptr(), input.as_ptr(), out.as_mut_ptr(), 1);
+            assert_eq!(status, STATUS_INVALID_PROGRAM);
+        }
+    }
+
+    #[test]
+    fn program_with_bad_octaves_is_refused_and_output_is_untouched() {
+        let (longs, doubles) = ([0_i64, 7, 0], [0.01, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0]);
+        let (input, mut out) = ([0.5], [9.0]);
+        let status = volmlib_noise_program_fill_2d(longs.as_ptr(), doubles.as_ptr(), 1, input.as_ptr(), input.as_ptr(), out.as_mut_ptr(), 1);
+        assert_eq!((status, out[0]), (STATUS_INVALID_PROGRAM, 9.0));
+    }
+
+    #[test]
+    fn null_program_arrays_are_refused() {
+        let (input, mut out) = ([0.5], [0.0]);
+        let status = volmlib_noise_program_fill_3d(std::ptr::null(), std::ptr::null(), 1, input.as_ptr(), input.as_ptr(), input.as_ptr(), out.as_mut_ptr(), 1);
+        assert_eq!(status, STATUS_NULL_POINTER);
     }
 
     #[test]

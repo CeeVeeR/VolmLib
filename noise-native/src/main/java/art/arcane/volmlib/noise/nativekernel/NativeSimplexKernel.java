@@ -54,7 +54,7 @@ public final class NativeSimplexKernel implements SimplexKernel {
         return MemorySegment.ofArray(array);
     }
 
-    private static RuntimeException nativeCallFailed(Throwable failure) {
+    static RuntimeException nativeCallFailed(Throwable failure) {
         if (failure instanceof RuntimeException runtime) {
             return runtime;
         }
