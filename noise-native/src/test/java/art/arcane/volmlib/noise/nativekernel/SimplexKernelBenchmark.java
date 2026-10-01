@@ -34,6 +34,7 @@ public final class SimplexKernelBenchmark {
         runVolumeCases(new JavaSimplexKernel(), new NativeSimplexKernel());
         runProgramCases("plain", new CNG(new RNG(1), 1D, 1).scale(0.05));
         runProgramCases("fractured", fracturedCng());
+        runUnsignedCases("fractured", fracturedCng());
         System.out.println("sink " + sink);
     }
 
@@ -53,6 +54,18 @@ public final class SimplexKernelBenchmark {
         NativeSignedNoiseProgram program = new NativeSignedNoiseProgram(cng.compileSignedProgram());
         report("3D cng " + shape, () -> sampleCng3D(cng));
         report("3D program " + shape, () -> program.fill3D(xs, ys, zs, out));
+    }
+
+    private void runUnsignedCases(String shape, CNG cng) {
+        NativeUnsignedNoiseProgram program = new NativeUnsignedNoiseProgram(cng.compileUnsignedProgram());
+        report("2D unsigned cng " + shape, () -> sampleCngUnsigned2D(cng));
+        report("2D unsigned program " + shape, () -> program.fill2D(xs, zs, out));
+    }
+
+    private void sampleCngUnsigned2D(CNG cng) {
+        for (int i = 0; i < POINTS; i++) {
+            out[i] = cng.noiseFast2D(xs[i], zs[i]);
+        }
     }
 
     private void sampleCng3D(CNG cng) {

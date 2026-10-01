@@ -38,6 +38,9 @@ final class NativeNoiseLibrary {
     static final MethodHandle PROGRAM_FILL_3D = bind("volmlib_noise_program_fill_3d", FunctionDescriptor.of(JAVA_INT,
         ADDRESS, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_LONG), SHORT_CALL_ON_HEAP_ARRAYS);
 
+    static final MethodHandle UNSIGNED_FILL_2D = bind("volmlib_noise_unsigned_fill_2d", FunctionDescriptor.of(JAVA_INT,
+        ADDRESS, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS, ADDRESS, JAVA_LONG), SHORT_CALL_ON_HEAP_ARRAYS);
+
     private NativeNoiseLibrary() {
     }
 

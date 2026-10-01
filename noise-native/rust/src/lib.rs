@@ -10,3 +10,4 @@ pub mod hash;
 pub mod program;
 pub mod simplex2d;
 pub mod simplex3d;
+pub mod unsigned;

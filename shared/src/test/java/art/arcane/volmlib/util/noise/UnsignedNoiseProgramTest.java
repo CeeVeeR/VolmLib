@@ -61,8 +61,12 @@ public class UnsignedNoiseProgramTest {
         CNG reference = fresh.get();
         SplittableRandom random = new SplittableRandom(label.hashCode());
         for (int point = 0; point < POINTS; point++) {
-            assertPointMatches(label, program, reference, coordinate(random), coordinate(random));
+            assertPointMatches(label, program, reference, random);
         }
+    }
+
+    private static void assertPointMatches(String label, UnsignedNoiseProgram program, CNG reference, SplittableRandom random) {
+        assertPointMatches(label, program, reference, coordinate(random), coordinate(random));
     }
 
     private static void assertPointMatches(String label, UnsignedNoiseProgram program, CNG reference, double x, double z) {

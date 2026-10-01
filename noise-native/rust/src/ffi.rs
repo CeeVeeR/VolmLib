@@ -3,6 +3,7 @@
 
 use crate::batch::{fill_program_2d, fill_program_3d, fill_simplex_2d, fill_simplex_3d};
 use crate::program::{DOUBLES_PER_NODE, LONGS_PER_NODE, MAXIMUM_NODES, Program};
+use crate::unsigned::{UNSIGNED_DOUBLES_PER_NODE, UNSIGNED_LONGS_PER_NODE, UnsignedProgram};
 use crate::simplex2d::simplex_2d;
 use crate::simplex3d::simplex_3d;
 
@@ -68,6 +69,27 @@ pub extern "C" fn volmlib_noise_program_fill_3d(longs: *const i64, doubles: *con
         fill_program_3d(&program, [ins[0], ins[1], ins[2]], output);
         STATUS_OK
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn volmlib_noise_unsigned_fill_2d(longs: *const i64, doubles: *const f64, nodes: usize, xs: *const f64, zs: *const f64, out: *mut f64, len: usize) -> i32 {
+    let program = match decoded_unsigned_program(longs, doubles, nodes) {
+        Ok(program) => program,
+        Err(status) => return status,
+    };
+    checked_buffers(&[xs, zs], out, len).map_or_else(|status| status, |(ins, output)| {
+        program.fill_2d(ins[0], ins[1], output);
+        STATUS_OK
+    })
+}
+
+fn decoded_unsigned_program(longs: *const i64, doubles: *const f64, nodes: usize) -> Result<UnsignedProgram, i32> {
+    reject_unusable_program(longs, doubles, nodes)?;
+    // SAFETY: checked non-null and nodes <= MAXIMUM_NODES; Java passes nodes * stride live values.
+    let long_slice = unsafe { borrow_input(longs, nodes * UNSIGNED_LONGS_PER_NODE) };
+    // SAFETY: as above, for the double stride; both slices are copied into owned nodes here.
+    let double_slice = unsafe { borrow_input(doubles, nodes * UNSIGNED_DOUBLES_PER_NODE) };
+    UnsignedProgram::decode(long_slice, double_slice, nodes).map_err(|_| STATUS_INVALID_PROGRAM)
 }
 
 fn decoded_program(longs: *const i64, doubles: *const f64, nodes: usize) -> Result<Program, i32> {

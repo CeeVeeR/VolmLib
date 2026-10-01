@@ -59,6 +59,15 @@ public class NativeCngFillRoutingTest {
         for (int i = 0; i < POINTS; i++) {
             NativeSimplexKernelParityTest.assertBitIdentical("2D " + i, cng.noiseFastSigned2D(xs[i], zs[i]), flat[i]);
         }
+        assertUnsignedFillMatches(cng);
+    }
+
+    private void assertUnsignedFillMatches(CNG cng) {
+        double[] unsigned = new double[POINTS];
+        cng.fillFast2D(xs, zs, unsigned);
+        for (int i = 0; i < POINTS; i++) {
+            NativeSimplexKernelParityTest.assertBitIdentical("unsigned 2D " + i, cng.noiseFast2D(xs[i], zs[i]), unsigned[i]);
+        }
     }
 
     private static CNG fractured() {

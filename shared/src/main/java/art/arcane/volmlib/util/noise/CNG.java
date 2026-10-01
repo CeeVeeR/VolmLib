@@ -60,6 +60,7 @@ public class CNG {
     private final double opacity;
     private static final int MAXIMUM_PROGRAM_DEPTH = 16;
     private transient volatile PreparedSignedProgram preparedProgram;
+    private transient volatile PreparedUnsigned cachedUnsignedProgram;
     private double scale;
     private double bakedScale;
     private double fscale;
@@ -883,9 +884,32 @@ public class CNG {
 
     public void fillFast2D(double[] xs, double[] zs, double[] out) {
         NoiseFills.requireMatchingLengths(out, xs, zs);
+        PreparedUnsignedNoiseProgram prepared = preparedUnsignedProgram();
+        if (prepared != null) {
+            prepared.fill2D(xs, zs, out);
+            return;
+        }
         for (int i = 0; i < out.length; i++) {
             out[i] = noiseFast2D(xs[i], zs[i]);
         }
+    }
+
+    private PreparedUnsignedNoiseProgram preparedUnsignedProgram() {
+        NoiseProgramEvaluator evaluator = NoiseProgramEvaluators.active();
+        UnsignedNoiseProgram program = evaluator == null ? null : compileUnsignedProgram();
+        return program == null ? null : preparedUnsignedFor(program, evaluator);
+    }
+
+    private PreparedUnsignedNoiseProgram preparedUnsignedFor(UnsignedNoiseProgram program, NoiseProgramEvaluator evaluator) {
+        PreparedUnsigned cached = cachedUnsignedProgram;
+        if (cached == null || !cached.program().equals(program)) {
+            cached = new PreparedUnsigned(program, evaluator.prepareUnsigned(program));
+            cachedUnsignedProgram = cached;
+        }
+        return cached.prepared();
+    }
+
+    private record PreparedUnsigned(UnsignedNoiseProgram program, PreparedUnsignedNoiseProgram prepared) {
     }
 
     public double noiseFast2D(double x, double z) {
@@ -1397,6 +1421,7 @@ public class CNG {
     private void markFastPathStateDirty() {
         fastPathStateDirty = true;
         preparedProgram = null;
+        cachedUnsignedProgram = null;
         cache = null;
         coordCacheIdentity = new Object();
     }

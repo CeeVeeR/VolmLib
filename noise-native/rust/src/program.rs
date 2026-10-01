@@ -19,10 +19,16 @@ pub struct Octaves {
     pub bounding: f64,
 }
 
+/// A noise source: simplex octaves, optionally shifted on x and z like OffsetNoiseGenerator.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Node {
+pub struct Source {
     pub octaves: Octaves,
     pub offset: Option<(f64, f64)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Node {
+    pub source: Source,
     pub scale: f64,
     pub opacity: f64,
     pub fracture_strength: f64,
@@ -42,7 +48,7 @@ pub enum ProgramError {
 
 impl Program {
     pub fn decode(longs: &[i64], doubles: &[f64], node_count: usize) -> Result<Program, ProgramError> {
-        check_layout(longs, doubles, node_count)?;
+        check_layout(longs, doubles, node_count, (LONGS_PER_NODE, DOUBLES_PER_NODE))?;
         let nodes = (0..node_count).map(|index| decode_node(longs, doubles, index));
         Ok(Program { nodes: nodes.collect::<Result<Vec<Node>, ProgramError>>()? })
     }
@@ -56,22 +62,27 @@ impl Program {
     }
 }
 
-fn check_layout(longs: &[i64], doubles: &[f64], node_count: usize) -> Result<(), ProgramError> {
+pub(crate) fn check_layout(longs: &[i64], doubles: &[f64], node_count: usize, strides: (usize, usize)) -> Result<(), ProgramError> {
     if node_count == 0 || node_count > MAXIMUM_NODES {
         return Err(ProgramError::NodeCount);
     }
-    let fits = longs.len() == node_count * LONGS_PER_NODE && doubles.len() == node_count * DOUBLES_PER_NODE;
+    let fits = longs.len() == node_count * strides.0 && doubles.len() == node_count * strides.1;
     if fits { Ok(()) } else { Err(ProgramError::SliceLength) }
 }
 
 fn decode_node(longs: &[i64], doubles: &[f64], index: usize) -> Result<Node, ProgramError> {
-    let (ints, reals) = node_slices(longs, doubles, index);
-    let offset = (ints[0] != 0).then_some((reals[2], reals[3]));
-    Ok(Node { octaves: decode_octaves(ints, reals)?, offset, scale: reals[4], opacity: reals[5], fracture_strength: reals[6] })
+    let (ints, reals) = node_slices(longs, doubles, index, (LONGS_PER_NODE, DOUBLES_PER_NODE));
+    Ok(Node { source: decode_source(ints, reals)?, scale: reals[4], opacity: reals[5], fracture_strength: reals[6] })
 }
 
-fn node_slices<'a>(longs: &'a [i64], doubles: &'a [f64], index: usize) -> (&'a [i64], &'a [f64]) {
-    (&longs[index * LONGS_PER_NODE..][..LONGS_PER_NODE], &doubles[index * DOUBLES_PER_NODE..][..DOUBLES_PER_NODE])
+pub(crate) fn node_slices<'a>(longs: &'a [i64], doubles: &'a [f64], index: usize, strides: (usize, usize)) -> (&'a [i64], &'a [f64]) {
+    (&longs[index * strides.0..][..strides.0], &doubles[index * strides.1..][..strides.1])
+}
+
+/// Source layout shared by every program kind: longs [kind, seed, octaves], doubles [frequency, bounding, offset x, offset z].
+pub(crate) fn decode_source(ints: &[i64], reals: &[f64]) -> Result<Source, ProgramError> {
+    let offset = (ints[0] != 0).then_some((reals[2], reals[3]));
+    Ok(Source { octaves: decode_octaves(ints, reals)?, offset })
 }
 
 fn decode_octaves(ints: &[i64], reals: &[f64]) -> Result<Octaves, ProgramError> {
@@ -117,7 +128,7 @@ fn warped(nodes: &[Node], index: usize, axis: &[f64], fill_fracture: impl FnOnce
     axis.iter().zip(&field).map(|(&coordinate, &fracture)| coordinate + (fracture * strength)).collect()
 }
 
-fn scaled(axis: &[f64], factor: f64) -> Vec<f64> {
+pub(crate) fn scaled(axis: &[f64], factor: f64) -> Vec<f64> {
     axis.iter().map(|&coordinate| coordinate * factor).collect()
 }
 
@@ -125,18 +136,22 @@ fn shifted(axis: &[f64], offset: f64) -> Vec<f64> {
     axis.iter().map(|&coordinate| coordinate + offset).collect()
 }
 
-fn fill_source_2d(node: &Node, [xs, zs]: [&[f64]; 2], out: &mut [f64]) {
-    match node.offset {
-        Some((offset_x, offset_z)) => fill_octaves_2d(&node.octaves, [&shifted(xs, offset_x), &shifted(zs, offset_z)], out),
-        None => fill_octaves_2d(&node.octaves, [xs, zs], out),
+pub(crate) fn fill_signed_source_2d(source: &Source, [xs, zs]: [&[f64]; 2], out: &mut [f64]) {
+    match source.offset {
+        Some((offset_x, offset_z)) => fill_octaves_2d(&source.octaves, [&shifted(xs, offset_x), &shifted(zs, offset_z)], out),
+        None => fill_octaves_2d(&source.octaves, [xs, zs], out),
     }
+}
+
+fn fill_source_2d(node: &Node, axes: [&[f64]; 2], out: &mut [f64]) {
+    fill_signed_source_2d(&node.source, axes, out);
     apply_opacity(node.opacity, out);
 }
 
 fn fill_source_3d(node: &Node, [xs, ys, zs]: [&[f64]; 3], out: &mut [f64]) {
-    match node.offset {
-        Some((offset_x, offset_z)) => fill_octaves_3d(&node.octaves, [&shifted(xs, offset_x), ys, &shifted(zs, offset_z)], out),
-        None => fill_octaves_3d(&node.octaves, [xs, ys, zs], out),
+    match node.source.offset {
+        Some((offset_x, offset_z)) => fill_octaves_3d(&node.source.octaves, [&shifted(xs, offset_x), ys, &shifted(zs, offset_z)], out),
+        None => fill_octaves_3d(&node.source.octaves, [xs, ys, zs], out),
     }
     apply_opacity(node.opacity, out);
 }
